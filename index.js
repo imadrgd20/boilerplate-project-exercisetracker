@@ -35,7 +35,7 @@ const exerciseSchema = new mongoose.Schema({
   username: String,
   description: String,
   duration: Number,
-  date:String
+  date:{ type: Date, default: Date.now }
 });
 const Exercise = mongoose.model('Exercise', exerciseSchema);
 
@@ -78,9 +78,9 @@ app.post('/api/users/:_id/exercises', async (req, res) => {
       username:username,
       description: description,
       duration: duration,
-      date:showedDate
+      date:passedDate
     })
-    res.json({ _id: exercise._id, username: username, date: showedDate, duration: exercise.duration, description: exercise.description });
+    res.json({ _id: user._id, username: username, date: showedDate, duration: exercise.duration, description: exercise.description });
   } catch (err) {
     console.error(err);
     res.status(500).json({ 'error':err });
@@ -91,22 +91,49 @@ app.post('/api/users/:_id/exercises', async (req, res) => {
 
 app.get('/api/users/:_id/logs', async (req, res) => {
   try {
-    const {_id} = req.params;
+    const { _id } = req.params;
     const user = await User.findById(_id).select('username');
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    const { from, to, limit } = req.query;
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
     const username = user.username;
-    const exercises = await Exercise.find({username});
+    
+    let query = { username };
+    
+    if (from && to) {
+      query.date = { $gte: new Date(from), $lte: new Date(to) };
+    } else if (from) {
+      query.date = { $gte: new Date(from) };
+    } else if (to) {
+      query.date = { $lte: new Date(to) };
+    }
+    
+    let exercisesQuery = Exercise.find(query);
+    
+    if (limit) {
+      exercisesQuery = exercisesQuery.limit(parseInt(limit));
+    }
+    
+    const exercises = await exercisesQuery.exec();
+    
     const log = exercises.map(exercise => ({
       description: exercise.description,
       duration: exercise.duration,
-      date: exercise.date
+      date: exercise.date.toDateString()
     }));
-    res.json(
-      { _id: _id,
-        username: username ,
-        count:exercises.length,
-        log:log
-      });
+    
+    const response = {
+      _id: _id,
+      username: username,
+      count: exercises.length,
+      log: log
+    };
+    
+    res.json(response);
+    
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
